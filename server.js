@@ -13,7 +13,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 // Middleware
 app.use(cors({
-  origin: isProduction ? process.env.FRONTEND_URL || 'https://your-netlify-app.netlify.app' : 'http://localhost:4003',
+  origin: true, // Allow all origins in development
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Auth-Code']
@@ -352,12 +352,17 @@ app.get('/api/subjects/:subjectId/documents', (req, res) => {
 // Upload a new document
 app.post('/api/documents', authenticateAdmin, upload.single('pdf'), (req, res) => {
   try {
+    console.log('Received upload request with headers:', req.headers);
+    console.log('Request body:', req.body);
+    console.log('Request file:', req.file);
+    
     const { name, categoryId, subjectId } = req.body;
     const file = req.file;
     
     console.log('Upload request received:', { name, categoryId, subjectId });
     
     if (!file) {
+      console.log('No file uploaded');
       return res.status(400).json({ 
         success: false,
         error: 'No PDF file uploaded' 
@@ -366,6 +371,7 @@ app.post('/api/documents', authenticateAdmin, upload.single('pdf'), (req, res) =
     
     // Validate category and subject IDs
     if (!categoryId || !subjectId) {
+      console.log('Missing category or subject ID');
       // Clean up the uploaded file if validation fails
       fs.unlink(file.path, (err) => {
         if (err) console.error('Error deleting file:', err);
