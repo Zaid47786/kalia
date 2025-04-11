@@ -12,7 +12,12 @@ const port = process.env.PORT || 5000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: isProduction ? process.env.FRONTEND_URL || 'https://your-netlify-app.netlify.app' : 'http://localhost:4003',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Auth-Code']
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -398,32 +403,25 @@ app.post('/api/documents', authenticateAdmin, upload.single('pdf'), (req, res) =
         });
         return res.status(500).json({ 
           success: false,
-          error: 'Database error when finding subject' 
+          error: 'Database error while validating subject' 
         });
       }
       
-      console.log('Found subject:', subject);
-      
       if (!subject) {
-        console.error('Subject not found with ID:', parsedSubjectId);
         // Clean up the uploaded file if subject not found
-        fs.unlink(file.path, (unlinkErr) => {
-          if (unlinkErr) console.error('Error deleting file:', unlinkErr);
+        fs.unlink(file.path, (err) => {
+          if (err) console.error('Error deleting file:', err);
         });
-        return res.status(404).json({ 
+        return res.status(400).json({ 
           success: false,
           error: 'Subject not found' 
         });
       }
       
       if (subject.category_id !== parsedCategoryId) {
-        console.error('Subject category mismatch:', { 
-          subjectCategoryId: subject.category_id, 
-          requestedCategoryId: parsedCategoryId 
-        });
-        // Clean up the uploaded file if subject doesn't match category
-        fs.unlink(file.path, (unlinkErr) => {
-          if (unlinkErr) console.error('Error deleting file:', unlinkErr);
+        // Clean up the uploaded file if subject doesn't belong to category
+        fs.unlink(file.path, (err) => {
+          if (err) console.error('Error deleting file:', err);
         });
         return res.status(400).json({ 
           success: false,
@@ -440,7 +438,7 @@ app.post('/api/documents', authenticateAdmin, upload.single('pdf'), (req, res) =
           });
           return res.status(500).json({ 
             success: false,
-            error: err.message 
+            error: 'Database error while finding admin user' 
           });
         }
         
@@ -461,63 +459,50 @@ app.post('/api/documents', authenticateAdmin, upload.single('pdf'), (req, res) =
           subjectName: subject.name
         });
         
-        db.run(`INSERT INTO documents (name, file_path, pages, owner_id, upload_date, is_public, category_id, subject_id) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
-          [name, relativePath, 1, ownerId, uploadDate, 1, parsedCategoryId, parsedSubjectId], 
+        // Insert the document into the database
+        db.run(
+          'INSERT INTO documents (name, file_path, owner_id, upload_date, category_id, subject_id) VALUES (?, ?, ?, ?, ?, ?)',
+          [name, relativePath, ownerId, uploadDate, parsedCategoryId, parsedSubjectId],
           function(err) {
             if (err) {
+              console.error('Error inserting document:', err);
               // Clean up the uploaded file if database error occurs
               fs.unlink(file.path, (unlinkErr) => {
                 if (unlinkErr) console.error('Error deleting file:', unlinkErr);
               });
               return res.status(500).json({ 
                 success: false,
-                error: err.message 
+                error: 'Database error while saving document' 
               });
             }
             
-            // Get the complete document information including subject and category names
-            db.get(`
-              SELECT d.*, s.name as subject_name, c.name as category_name 
-              FROM documents d 
-              LEFT JOIN subjects s ON d.subject_id = s.id 
-              LEFT JOIN categories c ON d.category_id = c.id 
-              WHERE d.id = ?
-            `, [this.lastID], (err, doc) => {
-              if (err) {
-                console.error('Error fetching document details:', err);
-                return res.status(500).json({ 
-                  success: false,
-                  error: 'Error fetching document details' 
-                });
+            // Return success response with the new document
+            res.json({
+              success: true,
+              document: {
+                id: this.lastID,
+                name,
+                file_path: relativePath,
+                upload_date: uploadDate,
+                category_id: parsedCategoryId,
+                subject_id: parsedSubjectId
               }
-              
-              res.json({ 
-                success: true, 
-                document: {
-                  id: doc.id,
-                  name: doc.name,
-                  file_path: doc.file_path,
-                  pages: doc.pages,
-                  owner_id: doc.owner_id,
-                  upload_date: doc.upload_date,
-                  is_public: doc.is_public,
-                  category_id: doc.category_id,
-                  subject_id: doc.subject_id,
-                  subject_name: doc.subject_name,
-                  category_name: doc.category_name
-                }
-              });
             });
           }
         );
       });
     });
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('Unexpected error during upload:', error);
+    // Clean up the uploaded file if it exists
+    if (req.file) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+    }
     res.status(500).json({ 
       success: false,
-      error: 'Internal server error during file upload' 
+      error: 'An unexpected error occurred during upload' 
     });
   }
 });
