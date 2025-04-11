@@ -1,0 +1,141 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+  }
+  
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  
+  h2, h3 {
+    margin: 0;
+  }
+
+  /* App.css */
+  .App {
+    text-align: center;
+  }
+
+  /* PDF Viewer Styles */
+  .rpv-core__viewer {
+    border-radius: 0.375rem;
+    overflow: hidden;
+  }
+
+  /* Annotation Mode Styles */
+  .annotation-mode {
+    transition: all 0.3s ease;
+  }
+
+  .annotation-mode.highlight-mode::after {
+    background-color: rgba(255, 236, 153, 0.2);
+  }
+
+  .annotation-mode.underline-mode::after {
+    background-color: rgba(147, 197, 253, 0.2);
+  }
+
+  .annotation-mode.textbox-mode::after {
+    background-color: rgba(110, 231, 183, 0.2);
+  }
+
+  /* Drawing Canvas Styles */
+  .drawing-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 20;
+  }
+
+  /* Drawing Tools Styles */
+  .pen-size-preview {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: currentColor;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  .color-picker-option {
+    transition: all 0.2s ease;
+  }
+
+  .color-picker-option:hover {
+    transform: scale(1.2);
+  }
+
+  .color-picker-option.active {
+    box-shadow: 0 0 0 2px white, 0 0 0 4px currentColor;
+  }
+
+  /* Floating Navigation Controls */
+  .floating-nav {
+    backdrop-filter: blur(8px);
+    background-color: rgba(255, 255, 255, 0.8);
+    transition: opacity 0.3s ease;
+  }
+
+  .floating-nav:hover {
+    opacity: 1;
+  }
+
+  /* Fullscreen Mode Styles */
+  :fullscreen .floating-nav {
+    opacity: 0.6;
+    z-index: 9999;
+  }
+
+  :fullscreen .rpv-core__viewer {
+    border-radius: 0;
+  }
+
+  /* Toolbar Styles */
+  .toolbar-button {
+    transition: all 0.2s ease;
+  }
+
+  .toolbar-button:hover {
+    transform: translateY(-2px);
+  }
+
+  .toolbar-button:active {
+    transform: translateY(0);
+  }
+
+  /* Custom Cursors */
+  .cursor-highlight {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23FBBF24' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 11l3 3L22 4'/%3E%3Cpath d='M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11'/%3E%3C/svg%3E") 0 24, auto;
+  }
+
+  .cursor-underline {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2360A5FA' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 18h12'/%3E%3Cpath d='M8 6v6a4 4 0 0 0 8 0V6'/%3E%3C/svg%3E") 0 24, auto;
+  }
+
+  .cursor-textbox {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2334D399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4 7 4 4 20 4 20 7'/%3E%3Cline x1='9' y1='20' x2='15' y2='20'/%3E%3Cline x1='12' y1='4' x2='12' y2='20'/%3E%3C/svg%3E") 0 24, auto;
+  }
+
+  .cursor-pencil {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z'%3E%3C/path%3E%3C/svg%3E") 0 24, auto;
+  }
+
+  /* Animation for annotation tools */
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(99, 102, 241, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+    }
+  }
+
+  .annotation-active {
+    animation: pulse 2s infinite;
+  }

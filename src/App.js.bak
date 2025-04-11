@@ -1,0 +1,793 @@
+import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
+import Header from './components/Header';
+import DocumentLibrary from './components/DocumentLibrary';
+import PDFReader from './components/PDFReader';
+import Sidebar from './components/Sidebar';
+import CategoryNavigation from './components/CategoryNavigation';
+
+const UPLOAD_AUTH_CODE = "ONLYME@DIS"; // Special code for upload authorization
+
+// Helper function to convert data URI to Blob
+const dataURItoBlob = (dataURI) => {
+  // Convert base64/URLEncoded data component to raw binary data held in a string
+  let byteString;
+  if (dataURI.split(',')[0].indexOf('base64') >= 0) {
+    byteString = atob(dataURI.split(',')[1]);
+  } else {
+    byteString = decodeURIComponent(dataURI.split(',')[1]);
+  }
+
+  // Separate out the mime component
+  const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+  // Write the bytes of the string to a typed array
+  const ia = new Uint8Array(byteString.length);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+
+  return new Blob([ia], { type: mimeString });
+};
+
+const PDFReaderApp = () => {
+  // Core states
+  const [currentPDF, setCurrentPDF] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [activeTab, setActiveTab] = useState('library');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [activeSubject, setActiveSubject] = useState(null);
+  const [activeCategory, setActiveCategory] = useState(null);
+  
+  // Modal states
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [authCode, setAuthCode] = useState('');
+  const [authError, setAuthError] = useState('');
+  
+  // Form states
+  const [uploadFormData, setUploadFormData] = useState({
+    name: '',
+    categoryId: '',
+    subjectId: '',
+    file: null
+  });
+  
+  const fileInputRef = useRef(null);
+
+  // Load documents from API on component mount
+  useEffect(() => {
+    fetchAllDocuments();
+    
+    // Check if user is already authenticated as admin
+    const isAdminUser = localStorage.getItem('isAdmin') === 'true';
+    setIsAdmin(isAdminUser);
+  }, []);
+
+  // Function to fetch all documents
+  const fetchAllDocuments = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('/api/documents');
+      setDocuments(response.data.documents);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching documents:', error);
+      setLoading(false);
+    }
+  };
+
+  // Function to fetch documents for a specific subject
+  const fetchDocumentsBySubject = async (subjectId) => {
+    try {
+      setLoading(true);
+      console.log('Fetching documents for subject ID:', subjectId);
+      const response = await axios.get(`/api/subjects/${subjectId}/documents`);
+      console.log('Documents fetched:', response.data.documents);
+      setDocuments(response.data.documents);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching documents for subject:', error);
+      setLoading(false);
+    }
+  };
+
+  // Function to handle subject selection
+  const handleSelectSubject = (subjectId, subjectName, categoryId, categoryName) => {
+    // Ensure IDs are parsed as integers
+    const parsedSubjectId = parseInt(subjectId, 10);
+    const parsedCategoryId = parseInt(categoryId, 10);
+    
+    console.log('Selected subject:', { 
+      subjectId: parsedSubjectId, 
+      subjectName, 
+      categoryId: parsedCategoryId, 
+      categoryName 
+    });
+    
+    setActiveSubject(parsedSubjectId);
+    setActiveCategory(parsedCategoryId);
+    fetchDocumentsBySubject(parsedSubjectId);
+    setSearchQuery('');
+  };
+
+  // Function to clear subject filter
+  const clearSubjectFilter = () => {
+    setActiveSubject(null);
+    setActiveCategory(null);
+    fetchAllDocuments();
+  };
+
+  // Function to handle authentication
+  const handleAuthentication = async () => {
+    try {
+      setLoading(true);
+      console.log('Authenticating with code:', authCode);
+      
+      if (authCode === UPLOAD_AUTH_CODE) {
+        console.log('Authentication successful');
+        setIsAdmin(true);
+        localStorage.setItem('isAdmin', 'true');
+        setShowAuthModal(false);
+        setAuthError('');
+        setAuthCode('');
+        setShowUploadModal(true); // Show upload modal immediately after authentication
+        alert('Authentication successful! You can now upload PDFs.');
+        setLoading(false);
+        return;
+      }
+      
+      // If direct check failed, try the API
+      try {
+        const response = await axios.post('/api/auth', { authCode });
+        
+        if (response.data.success) {
+          setIsAdmin(true);
+          localStorage.setItem('isAdmin', 'true');
+          setShowAuthModal(false);
+          setAuthError('');
+          setAuthCode('');
+          setShowUploadModal(true); // Show upload modal immediately after authentication
+          alert('Authentication successful! You can now upload PDFs.');
+        } else {
+          setAuthError('Invalid authentication code. Please try again.');
+        }
+      } catch (error) {
+        console.error('API authentication error:', error);
+        setAuthError('Invalid authentication code. Please try again.');
+      }
+      
+      setLoading(false);
+    } catch (error) {
+      console.error('Authentication error:', error);
+      setAuthError('Invalid authentication code. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  // Function to handle upload button click
+  const handleUploadClick = () => {
+    if (isAdmin) {
+      setShowUploadModal(true);
+    } else {
+      setShowAuthModal(true);
+    }
+  };
+
+  const handleUploadFormChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name === 'categoryId') {
+      setUploadFormData(prev => ({
+        ...prev,
+        [name]: value,
+        subjectId: '' // Reset subject when category changes
+      }));
+    } else {
+      setUploadFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  // Function to handle file selection
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      console.log('File selected:', file.name);
+      setUploadFormData(prev => ({
+        ...prev,
+        file,
+        name: file.name
+      }));
+    }
+  };
+
+  // Function to handle file upload
+  const handleFileUpload = async (event) => {
+    event.preventDefault();
+    
+    if (isAdmin) {
+      const { file, name, categoryId, subjectId } = uploadFormData;
+      
+      if (!file) {
+        alert('Please select a PDF file to upload');
+        return;
+      }
+      
+      if (!categoryId || !subjectId) {
+        alert('Please select a category and subject');
+        return;
+      }
+      
+      if (file.type !== 'application/pdf') {
+        alert('Please upload a valid PDF file');
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        console.log('Uploading file:', file.name);
+        console.log('Category ID:', categoryId);
+        console.log('Subject ID:', subjectId);
+        
+        // For testing without an actual server, simulate upload success
+        const simulateServerUpload = !window.location.hostname.includes('localhost');
+        
+        if (simulateServerUpload) {
+          // Create a local representation of the uploaded document
+          const fileUrl = URL.createObjectURL(file);
+          const fileReader = new FileReader();
+          
+          fileReader.onload = (e) => {
+            const fileData = e.target.result;
+            const timestamp = Date.now();
+            
+            // Create a new document object
+            const newDoc = {
+              id: timestamp,
+              name: name || file.name,
+              owner: 'Admin',
+              owner_name: 'Admin',
+              date: new Date().toISOString().split('T')[0],
+              upload_date: new Date().toISOString().split('T')[0],
+              pages: Math.floor(Math.random() * 30) + 5, // Simulate page count
+              url: fileUrl,
+              storedData: fileData,
+              category_id: parseInt(categoryId, 10),
+              subject_id: parseInt(subjectId, 10),
+              category_name: categoryId === '1' ? 'CLASS 9' : 'CLASS 10',
+              subject_name: getSubjectNameById(parseInt(subjectId, 10))
+            };
+            
+            console.log('New document:', newDoc);
+            
+            // Add to documents state
+            setDocuments(prevDocs => [...prevDocs, newDoc]);
+            
+            // Reset form
+            setUploadFormData({
+              name: '',
+              categoryId: '',
+              subjectId: '',
+              file: null
+            });
+            
+            setShowUploadModal(false);
+            setLoading(false);
+            
+            // If a subject is active, refresh the subject's document list
+            if (activeSubject) {
+              fetchDocumentsBySubject(activeSubject);
+            }
+            
+            alert('PDF uploaded successfully and is now available to all users.');
+          };
+          
+          fileReader.readAsDataURL(file);
+          return;
+        }
+        
+        // Create form data for file upload to the server
+        const formData = new FormData();
+        formData.append('pdf', file);
+        formData.append('name', name || file.name);
+        formData.append('categoryId', categoryId);
+        formData.append('subjectId', subjectId);
+        
+        // Estimate page count (in a real app, you'd extract this from the PDF)
+        const pages = Math.floor(Math.random() * 30) + 5;
+        formData.append('pages', pages);
+        
+        // Send the file to the server
+        const response = await axios.post('/api/documents', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Auth-Code': UPLOAD_AUTH_CODE
+          }
+        });
+        
+        if (response.data.success) {
+          // Refresh the document list based on current filter
+          if (activeSubject) {
+            fetchDocumentsBySubject(activeSubject);
+          } else {
+            fetchAllDocuments();
+          }
+          
+          setShowUploadModal(false);
+          setUploadFormData({
+            name: '',
+            categoryId: '',
+            subjectId: '',
+            file: null
+          });
+          
+          alert('PDF uploaded successfully and is now available to all users.');
+        }
+        
+        setLoading(false);
+      } catch (error) {
+        console.error('Error uploading PDF:', error);
+        alert('Error uploading PDF. Please try again.');
+        setLoading(false);
+      }
+    } else {
+      alert('Only administrators can upload documents');
+    }
+  };
+  
+  // Helper function to get subject name by ID
+  const getSubjectNameById = (subjectId) => {
+    const subjectMap = {
+      // Class 9 subjects
+      1: 'Biology', 
+      2: 'Chemistry', 
+      3: 'Economics', 
+      4: 'Politics', 
+      5: 'Urdu',
+      6: 'English', 
+      7: 'Geography', 
+      8: 'Math', 
+      20: 'History', 
+      21: 'Hindi', 
+      22: 'Physics',
+      
+      // Class 10 subjects
+      9: 'Biology', 
+      10: 'Chemistry', 
+      11: 'Economics', 
+      12: 'English', 
+      13: 'Geography', 
+      14: 'Hindi', 
+      15: 'History', 
+      16: 'Math', 
+      17: 'Physics', 
+      18: 'Politics', 
+      19: 'Urdu'
+    };
+    return subjectMap[subjectId] || 'Unknown Subject';
+  };
+
+  // Function to open a document
+  const openDocument = async (document) => {
+    try {
+      setLoading(true);
+      console.log('Opening document:', document);
+      
+      // Create a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      
+      // If we're in development mode with test data, we might not have an actual API to call
+      let documentToOpen = { ...document };
+      
+      if (document.id) {
+        try {
+          // Try to get the document from the API
+          const response = await axios.get(`/api/documents/${document.id}`);
+          console.log('Document response:', response.data);
+          
+          if (response.data.document) {
+            documentToOpen = response.data.document;
+          }
+        } catch (error) {
+          console.error('Error fetching document details, using provided document:', error);
+          // Continue with the document we have
+        }
+      }
+      
+      // If we have stored data, create a new object URL from it
+      if (document.storedData) {
+        // For documents loaded from localStorage, we need to recreate the URL
+        if (!document.url || !document.url.startsWith('blob:')) {
+          try {
+            // Revoke any existing blob URL to prevent memory leaks
+            if (documentToOpen.url && documentToOpen.url.startsWith('blob:')) {
+              URL.revokeObjectURL(documentToOpen.url);
+            }
+            
+            // Create a new blob URL
+            const blob = dataURItoBlob(document.storedData);
+            documentToOpen.url = URL.createObjectURL(blob);
+            console.log('Created new blob URL for PDF:', documentToOpen.url);
+          } catch (error) {
+            console.error('Error creating blob URL:', error);
+            alert('Error loading PDF data. Please try again.');
+            setLoading(false);
+            return;
+          }
+        }
+      } else if (document.file_path) {
+        // If we have a file path, use the API endpoint to get the PDF with a timestamp to prevent caching
+        documentToOpen.url = `/api/pdf/${document.id}?t=${timestamp}`;
+        console.log('Using API endpoint for PDF:', documentToOpen.url);
+      } else {
+        // For testing, use a sample PDF URL
+        documentToOpen.url = 'https://cors-anywhere.herokuapp.com/https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+        console.log('Using sample PDF URL:', documentToOpen.url);
+      }
+      
+      console.log('Setting current PDF:', documentToOpen);
+      
+      // Reset current page to 1
+      setCurrentPage(1);
+      
+      // Set the current PDF
+      setCurrentPDF(null); // First set to null to force re-render
+      setTimeout(() => {
+        setCurrentPDF(documentToOpen); // Then set the new PDF
+      }, 100);
+      
+      setActiveTab('reader');
+      setLoading(false);
+    } catch (error) {
+      console.error('Error opening document:', error);
+      setLoading(false);
+      alert('Error opening document. Please try again.');
+    }
+  };
+
+  // Function to delete a document
+  const deleteDocument = async (docId) => {
+    if (!isAdmin) {
+      alert('Only administrators can delete documents');
+      return;
+    }
+    
+    if (confirm('Are you sure you want to delete this document?')) {
+      try {
+        setLoading(true);
+        
+        // Delete the document from the server
+        const response = await axios.delete(`/api/documents/${docId}`, {
+          headers: {
+            'Auth-Code': UPLOAD_AUTH_CODE
+          }
+        });
+        
+        if (response.data.success) {
+          // Remove from local state
+          setDocuments(prevDocs => prevDocs.filter(doc => doc.id !== docId));
+          
+          // If the deleted document is currently open, go back to library
+          if (currentPDF && currentPDF.id === docId) {
+            setCurrentPDF(null);
+            setActiveTab('library');
+          }
+          
+          alert('Document deleted successfully');
+        }
+        
+        setLoading(false);
+      } catch (error) {
+        console.error('Error deleting document:', error);
+        alert('Error deleting document. Please try again.');
+        setLoading(false);
+      }
+    }
+  };
+
+  // Toggle fullscreen function - simplified since we don't need drawing tools
+  const toggleFullScreen = () => {
+    if (window.pdfReaderRef) {
+      window.pdfReaderRef.handleFullScreen();
+    }
+  };
+
+  // Handle download function - simplified
+  const handleDownload = () => {
+    if (currentPDF && currentPDF.url) {
+      const link = document.createElement('a');
+      link.href = currentPDF.url;
+      link.download = currentPDF.name || 'document.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  // Handle share function - simplified
+  const handleShare = async () => {
+    if (currentPDF) {
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: currentPDF.name,
+            text: `Check out this PDF: ${currentPDF.name}`,
+            url: window.location.href,
+          });
+        } else {
+          // Fallback for browsers that don't support the Web Share API
+          const shareUrl = window.location.href;
+          navigator.clipboard.writeText(shareUrl);
+          alert('Link copied to clipboard!');
+        }
+      } catch (error) {
+        console.error('Error sharing:', error);
+      }
+    }
+  };
+
+  // Function to handle logout (remove admin privileges)
+  const handleLogout = () => {
+    setIsAdmin(false);
+    localStorage.removeItem('isAdmin');
+    alert('You have been logged out. You will need to enter the code again to upload PDFs.');
+  };
+
+  return (
+    <div className={`flex flex-col min-h-screen ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-800'}`}>
+      {/* Header Component */}
+      <Header 
+        darkMode={darkMode} 
+        setDarkMode={setDarkMode} 
+        handleUploadClick={handleUploadClick} 
+        isAdmin={isAdmin}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        handleLogout={handleLogout}
+      />
+
+      {/* Main Content Area */}
+      <main className="container mx-auto flex-grow p-3 sm:p-4 md:p-6 max-w-screen-2xl">
+        {loading && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-xl">
+              <p className="text-lg">Loading...</p>
+            </div>
+          </div>
+        )}
+        
+        {activeTab === 'library' && (
+          <div className="flex flex-col lg:flex-row gap-4 md:gap-6">
+            {/* Category Navigation */}
+            <div className="w-full lg:w-64 xl:w-72 2xl:w-80 flex-shrink-0 order-2 lg:order-1">
+              <CategoryNavigation 
+                onSelectSubject={handleSelectSubject}
+                activeSubject={activeSubject}
+              />
+            </div>
+            
+            {/* Document Library */}
+            <div className="flex-grow order-1 lg:order-2">
+              {activeSubject && (
+                <div className="mb-4 p-3 bg-indigo-50 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between">
+                  <div className="mb-2 sm:mb-0">
+                    <span className="text-gray-600">Viewing documents in: </span>
+                    <span className="font-medium text-indigo-700">
+                      {documents.length > 0 ? `${documents[0].category_name || 'Category'} / ${documents[0].subject_name || 'Subject'}` : 'Selected Subject'}
+                    </span>
+                  </div>
+                  <button 
+                    onClick={clearSubjectFilter}
+                    className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                  >
+                    Clear Filter
+                  </button>
+                </div>
+              )}
+              
+              <DocumentLibrary 
+                documents={documents} 
+                searchQuery={searchQuery} 
+                setSearchQuery={setSearchQuery} 
+                openDocument={openDocument}
+                deleteDocument={deleteDocument}
+                isAdmin={isAdmin}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'reader' && currentPDF && (
+          <div className="flex flex-col h-full">
+            {/* PDF Viewer */}
+            <div className="flex-grow" id="pdf-viewer-container">
+              <PDFReader 
+                currentPDF={currentPDF} 
+                currentPage={currentPage} 
+                setCurrentPage={setCurrentPage} 
+                toggleFullScreen={toggleFullScreen}
+                ref={(pdfReaderRef) => {
+                  window.pdfReaderRef = pdfReaderRef;
+                }}
+              />
+            </div>
+            
+            {/* Sidebar - Hidden by default in the UI but needed for the component structure */}
+            <div className="hidden">
+              <Sidebar 
+                sidebarOpen={sidebarOpen}
+                setSidebarOpen={setSidebarOpen}
+                currentPDF={currentPDF}
+                currentPage={currentPage}
+                setCurrentPage={setCurrentPage}
+              />
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Authentication Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h2 className="text-2xl font-bold mb-4">Authentication Required</h2>
+            <p className="mb-4">Please enter the authentication code to upload PDFs:</p>
+            
+            <input
+              type="password"
+              value={authCode}
+              onChange={(e) => setAuthCode(e.target.value)}
+              placeholder="Enter authentication code"
+              className="w-full p-2 border border-gray-300 rounded mb-4"
+            />
+            
+            {authError && <p className="text-red-500 mb-4">{authError}</p>}
+            
+            <div className="flex justify-end space-x-2">
+              <button 
+                onClick={() => setShowAuthModal(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAuthentication}
+                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                disabled={loading}
+              >
+                Authenticate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-4 sm:p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl sm:text-2xl font-bold mb-4">Upload PDF</h2>
+            
+            <form onSubmit={handleFileUpload}>
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Select PDF File</label>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleFileSelect}
+                  className="w-full p-2 border border-gray-300 rounded"
+                  required
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Document Name</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={uploadFormData.name}
+                  onChange={handleUploadFormChange}
+                  placeholder="Enter document name"
+                  className="w-full p-2 border border-gray-300 rounded"
+                  required
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Category</label>
+                <select
+                  name="categoryId"
+                  value={uploadFormData.categoryId}
+                  onChange={handleUploadFormChange}
+                  className="w-full p-2 border border-gray-300 rounded"
+                  required
+                >
+                  <option value="">Select Category</option>
+                  <option value="1">CLASS 9</option>
+                  <option value="2">CLASS 10</option>
+                </select>
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Subject</label>
+                <select
+                  name="subjectId"
+                  value={uploadFormData.subjectId}
+                  onChange={handleUploadFormChange}
+                  className="w-full p-2 border border-gray-300 rounded"
+                  required
+                  disabled={!uploadFormData.categoryId}
+                >
+                  <option value="">Select Subject</option>
+                  {uploadFormData.categoryId === '1' && (
+                    <>
+                      <option value="6">English</option>
+                      <option value="21">Hindi</option>
+                      <option value="8">Math</option>
+                      <option value="1">Biology</option>
+                      <option value="2">Chemistry</option>
+                      <option value="22">Physics</option>
+                      <option value="20">History</option>
+                      <option value="7">Geography</option>
+                      <option value="3">Economics</option>
+                      <option value="4">Politics</option>
+                      <option value="5">Urdu</option>
+                    </>
+                  )}
+                  {uploadFormData.categoryId === '2' && (
+                    <>
+                      <option value="12">English</option>
+                      <option value="14">Hindi</option>
+                      <option value="16">Math</option>
+                      <option value="9">Biology</option>
+                      <option value="10">Chemistry</option>
+                      <option value="17">Physics</option>
+                      <option value="15">History</option>
+                      <option value="13">Geography</option>
+                      <option value="11">Economics</option>
+                      <option value="18">Politics</option>
+                      <option value="19">Urdu</option>
+                    </>
+                  )}
+                </select>
+              </div>
+              
+              <div className="flex justify-end space-x-2">
+                <button 
+                  type="button"
+                  onClick={() => setShowUploadModal(false)}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                  disabled={loading}
+                >
+                  Upload
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PDFReaderApp;
+
+
+
+
